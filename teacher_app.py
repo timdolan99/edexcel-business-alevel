@@ -34,11 +34,11 @@ if os.path.exists(SPEC_PATH):
         COURSE_SPEC = json.load(f)
 else:
     COURSE_SPEC = {
-        "course_title": "OCR A-Level Computer Science",
+        "course_title": "Edexcel A-Level Business",
         "level": "A-Level",
     }
 
-COURSE_TITLE = COURSE_SPEC.get("course_title", "OCR A-Level Computer Science")
+COURSE_TITLE = COURSE_SPEC.get("course_title", "Edexcel A-Level Business")
 LEVEL = COURSE_SPEC.get("level", "A-Level")
 
 
@@ -132,9 +132,9 @@ st.set_page_config(
     page_icon=LOGO_PATH if os.path.exists(LOGO_PATH) else "📊",
 )
 
-THEME_PRIMARY = "#0284c7"
-THEME_GRADIENT_START = "#0369a1"
-THEME_GRADIENT_END = "#0284c7"
+THEME_PRIMARY = "#059669"
+THEME_GRADIENT_START = "#065f46"
+THEME_GRADIENT_END = "#059669"
 
 st.markdown(
     f"""
@@ -145,7 +145,7 @@ st.markdown(
     .console-header {{ 
         background: linear-gradient(135deg, {THEME_GRADIENT_START} 0%, {THEME_GRADIENT_END} 100%); 
         color: white; padding: 22px; font-weight: 700; text-align: center; 
-        font-size: 1.4em; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(2, 132, 199, 0.25);
+        font-size: 1.4em; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(5, 150, 105, 0.25);
         margin-bottom: 24px;
     }}
     .metric-card {{
@@ -154,8 +154,8 @@ st.markdown(
         min-height: 120px; display: flex; flex-direction: column; justify-content: center;
     }}
     .afl-callout {{
-        background: #f0f9ff; border-left: 5px solid {THEME_PRIMARY}; padding: 16px 20px;
-        border-radius: 8px; color: #0369a1; font-size: 0.98em; line-height: 1.5; margin-top: 15px;
+        background: #ecfdf5; border-left: 5px solid {THEME_PRIMARY}; padding: 16px 20px;
+        border-radius: 8px; color: #065f46; font-size: 0.98em; line-height: 1.5; margin-top: 15px;
     }}
     </style>
 """,
@@ -176,6 +176,7 @@ def load_data():
     if engine is None:
         return pd.DataFrame()
     try:
+        # Targets activity_logs_business table
         query = "SELECT * FROM activity_logs_business ORDER BY timestamp DESC;"
         df = pd.read_sql_query(query, engine)
         return df
@@ -191,9 +192,6 @@ if df_raw.empty:
         "⚠️ No analytics data found in Supabase. Please run `generate_test_data.py` first to populate test logs."
     )
     st.stop()
-
-# --- Dynamic Filter Generation ---
-
 
 # --- Sidebar (Centered Logo) ---
 if os.path.exists(LOGO_PATH):
@@ -253,16 +251,6 @@ if "subtopic" in filtered_df.columns and not filtered_df.empty:
         if len(recent_topics) == 2:
             break
 
-if len(recent_topics) == 0:
-    trending_str = "<p style='font-size: 0.9em; color: #64748b;'>None Recorded</p>"
-elif len(recent_topics) == 1:
-    trending_str = f"<p style='font-size: 0.85em; font-weight: 600; color: #0284c7; margin:0;'>• {recent_topics[0]}</p>"
-else:
-    trending_str = (
-        f"<p style='font-size: 0.8em; font-weight: 600; color: #0284c7; margin:0; line-height: 1.2;'>• {recent_topics[0]}</p>"
-        f"<p style='font-size: 0.8em; font-weight: 600; color: #0284c7; margin:3px 0 0 0; line-height: 1.2;'>• {recent_topics[1]}</p>"
-    )
-
 all_missed_keywords = []
 for kw_raw in filtered_df["keywords_missed"].dropna():
     if not kw_raw:
@@ -303,23 +291,23 @@ with c4:
         unsafe_allow_html=True,
     )
 
-# Helper regex to strip leading specification section numbers (e.g., "1.1.1 ", "2.3.1 ")
+# Helper regex to strip leading specification section numbers
 clean_topics = [re.sub(r"^\d+(\.\d+)*\s*", "", t) for t in recent_topics]
 
 if len(clean_topics) == 0:
     trending_str = "<p style='font-size: 0.85em; color: #64748b; margin:0;'>None Recorded</p>"
 elif len(clean_topics) == 1:
     trending_str = (
-        f"<p style='font-size: 0.8em; font-weight: 600; color: #0284c7; margin:0; "
+        f"<p style='font-size: 0.8em; font-weight: 600; color: #059669; margin:0; "
         f"white-space: nowrap; overflow: hidden; text-overflow: ellipsis;' title='#{clean_topics[0]}'>"
         f"#{clean_topics[0]}</p>"
     )
 else:
     trending_str = (
-        f"<p style='font-size: 0.8em; font-weight: 600; color: #0284c7; margin:0; line-height: 1.2; "
+        f"<p style='font-size: 0.8em; font-weight: 600; color: #059669; margin:0; line-height: 1.2; "
         f"white-space: nowrap; overflow: hidden; text-overflow: ellipsis;' title='#{clean_topics[0]}'>"
         f"#{clean_topics[0]}</p>"
-        f"<p style='font-size: 0.8em; font-weight: 600; color: #0284c7; margin:3px 0 0 0; line-height: 1.2; "
+        f"<p style='font-size: 0.8em; font-weight: 600; color: #059669; margin:3px 0 0 0; line-height: 1.2; "
         f"white-space: nowrap; overflow: hidden; text-overflow: ellipsis;' title='#{clean_topics[1]}'>"
         f"#{clean_topics[1]}</p>"
     )
@@ -344,10 +332,8 @@ tab1, tab2, tab3 = st.tabs(
 with tab1:
     st.subheader("Top Specification Keywords Missed Across Cohort")
     if kw_counter:
-        # 1. Create a 50/50 column layout
         col_chart, col_cloud = st.columns(2)
 
-        # --- LEFT COLUMN: Resized Horizontal Bar Chart ---
         with col_chart:
             st.markdown("##### Keyword Frequency")
             top_kws = pd.DataFrame(
@@ -361,7 +347,7 @@ with tab1:
                 color="Frequency",
                 color_continuous_scale="Reds",
                 title="A-Level Specification Terms",
-                height=380,  # Fixed height to match HTML cloud card
+                height=380,
             )
             fig_kw.update_layout(
                 yaxis={"categoryorder": "total ascending"},
@@ -370,7 +356,6 @@ with tab1:
             )
             st.plotly_chart(fig_kw, use_container_width=True)
 
-        # --- RIGHT COLUMN: Matching Height HTML Word Cloud ---
         with col_cloud:
             st.markdown("##### Keyword Cloud")
             
@@ -379,36 +364,29 @@ with tab1:
                 import random
 
                 top_terms = kw_counter.most_common(20)
-                
-                # 1. Shuffle order so top terms scatter naturally throughout the cloud
                 shuffled_terms = top_terms.copy()
-                random.seed(42)  # Fixed seed prevents cloud jump on rerender
+                random.seed(42)
                 random.shuffle(shuffled_terms)
 
-                # Calculate max and min for scaling
                 max_freq = max(freq for _, freq in top_terms) if top_terms else 1
                 min_freq = min(freq for _, freq in top_terms) if top_terms else 1
 
                 html_tags = []
                 for term, freq in shuffled_terms:
-                    # 2. Logarithmic scaling prevents top items from dominating row height
                     if max_freq > min_freq:
                         norm_score = math.log(freq - min_freq + 1) / math.log(max_freq - min_freq + 1)
                     else:
                         norm_score = 0.5
 
-                    # Font size ranges between 0.8em and 1.6em
                     font_size = round(0.8 + (norm_score * 0.8), 2)
                     
-                    # Color hierarchy matching dark red palette
                     if norm_score > 0.7:
-                        color = "#7f1d1d"  # Very dark red
+                        color = "#7f1d1d"
                     elif norm_score > 0.4:
-                        color = "#b91c1c"  # Medium red
+                        color = "#b91c1c"
                     else:
-                        color = "#ef4444"  # Light red/coral
+                        color = "#ef4444"
 
-                    # 3. Organic spacing and subtle text positioning
                     html_tags.append(
                         f'<span style="font-size: {font_size}em; color: {color}; font-weight: 700; '
                         f'margin: 6px 10px; padding: 2px 4px; display: inline-block; '
@@ -429,13 +407,12 @@ with tab1:
             else:
                 st.info("No missed keywords captured for this selection.")
 
-        # --- BELOW BOTH VISUALS: Full-width AfL Insight Callout ---
         st.markdown(
             f"""
             <div class="afl-callout">
                 💡 <b>Actionable Assessment for Learning (AfL) Insight:</b><br>
                 The most frequently missed technical term in this view is <b>"{top_missed_term}"</b> (missed <b>{kw_counter[top_missed_term]}</b> times across student practice rounds). 
-                Consider opening your next lesson with a 5-minute retrieval starter or whiteboard trace task targeting this specific Computer Science concept.
+                Consider opening your next lesson with a 5-minute retrieval starter or case-study application task targeting this specific Business concept.
             </div>
         """,
             unsafe_allow_html=True,
@@ -456,7 +433,7 @@ with tab2:
             values="Sessions",
             hole=0.4,
             color_discrete_sequence=px.colors.qualitative.Set2,
-            height=380,  # Matched height
+            height=380,
         )
         fig_mode.update_layout(margin=dict(l=20, r=20, t=40, b=20))
         st.plotly_chart(fig_mode, use_container_width=True)
@@ -469,7 +446,7 @@ with tab2:
             nbins=10,
             title="Cohort Score Range (%)",
             color_discrete_sequence=[THEME_PRIMARY],
-            height=380,  # Matched height
+            height=380,
         )
         fig_score.update_layout(margin=dict(l=20, r=20, t=40, b=20))
         st.plotly_chart(fig_score, use_container_width=True)
@@ -489,9 +466,6 @@ with tab3:
 
     st.write("---")
 
-    # =========================================================
-    # PLATFORM 1: BLOOKET
-    # =========================================================
     if game_platform == "Blooket":
         blooket_tab1, blooket_tab2 = st.tabs(
             ["📚 Structured Topic Revision", "🎯 AfL Intervention Prompting"]
@@ -521,9 +495,9 @@ with tab3:
                         model="gemini-3.6-flash", temperature=0.2
                     )
                     prompt = ChatPromptTemplate.from_template(
-                        """You are an AQA/OCR A-Level Computer Science examiner.
+                        """You are an Edexcel A-Level Business examiner.
                         Create {num_q} standard revision questions for the unit: '{unit}'.
-                        Focus on core terminology, key facts, and standard exam definitions.
+                        Focus on core terminology, key financial concepts, strategic models, and standard exam definitions.
                         
                         Return ONLY a JSON array with exact keys:
                         [
@@ -575,7 +549,7 @@ with tab3:
                 "Intervention Prompt / Misconception Notes:",
                 value=default_afl_prompt,
                 height=120,
-                placeholder="e.g., Students are confusing encapsulation with abstraction.",
+                placeholder="e.g., Students confuse liquidity with profitability ratios.",
                 key="blooket_afl_text_area",
             )
 
@@ -598,7 +572,7 @@ with tab3:
                             model="gemini-3.6-flash", temperature=0.2
                         )
                         prompt = ChatPromptTemplate.from_template(
-                            """You are an expert Computer Science teacher designing a targeted diagnostic intervention.
+                            """You are an expert A-Level Business teacher designing a targeted diagnostic intervention.
                             Use the following AfL assessment notes / student misconceptions:
                             "{context}"
                             
@@ -643,9 +617,6 @@ with tab3:
                             key="dl_blooket_int",
                         )
 
-    # =========================================================
-    # PLATFORM 2: GIMKIT
-    # =========================================================
     elif game_platform == "Gimkit":
         gimkit_tab1, gimkit_tab2 = st.tabs(
             ["📚 Structured Topic Revision", "🎯 AfL Intervention Prompting"]
@@ -675,9 +646,9 @@ with tab3:
                         model="gemini-3.6-flash", temperature=0.2
                     )
                     prompt = ChatPromptTemplate.from_template(
-                        """You are an AQA/OCR A-Level Computer Science examiner.
+                        """You are an Edexcel A-Level Business examiner.
                         Create {num_q} standard revision questions for the unit: '{unit}'.
-                        Focus on core terminology, key facts, and standard exam definitions.
+                        Focus on core terminology, key financial concepts, strategic models, and standard exam definitions.
                         
                         Return ONLY a JSON array with exact keys:
                         [
@@ -727,7 +698,7 @@ with tab3:
                 "Intervention Prompt / Misconception Notes:",
                 value=default_gimkit_prompt,
                 height=120,
-                placeholder="e.g., Students confuse encapsulation with abstraction.",
+                placeholder="e.g., Students confuse liquidity with profitability ratios.",
                 key="gimkit_afl_text_area",
             )
 
@@ -750,7 +721,7 @@ with tab3:
                             model="gemini-3.6-flash", temperature=0.2
                         )
                         prompt = ChatPromptTemplate.from_template(
-                            """You are an expert Computer Science teacher designing a targeted diagnostic intervention.
+                            """You are an expert A-Level Business teacher designing a targeted diagnostic intervention.
                             Use the following AfL assessment notes / student misconceptions:
                             "{context}"
                             
@@ -836,19 +807,19 @@ def stream_ai_synthesis(prompt_text):
 
 def ask_ai_about_data(user_question, chat_history):
     schema_info = """
-    Table name: activity_logs (PostgreSQL)
+    Table name: activity_logs_business (PostgreSQL)
     Columns:
     - id (SERIAL PRIMARY KEY)
     - timestamp (TIMESTAMPTZ)
-    - subject (TEXT) - e.g., 'OCR A-Level Computer Science'
+    - subject (TEXT) - e.g., 'Edexcel A-Level Business' or 'Business'
     - level (TEXT) - e.g., 'A-Level'
-    - unit (TEXT) - e.g., '1.1 The characteristics of contemporary processors...'
-    - subtopic (TEXT) - e.g., '1.1.1 Structure and function of the processor'
-    - app_mode (TEXT) - 'socratic', 'quiz', 'extended', 'rewrite'
+    - unit (TEXT) - e.g., 'Theme 1: Marketing and People'
+    - subtopic (TEXT) - e.g., '1.3 Demand, supply & price elasticity'
+    - app_mode (TEXT) - 'socratic', 'freestyle_socratic', 'quiz', 'extended', 'rewrite'
     - score_pct (REAL) - percentage score (0.0 to 100.0)
-    - keywords_used (TEXT) - comma-separated list of technical CS terms used correctly
-    - keywords_missed (TEXT) - comma-separated list of technical CS terms missed
-    - misconception_flag (INTEGER) - 1 if fundamental CS misconception detected (<45%), else 0
+    - keywords_used (TEXT) - comma-separated list of technical business terms used correctly
+    - keywords_missed (TEXT) - comma-separated list of technical business terms missed
+    - misconception_flag (INTEGER) - 1 if fundamental business misconception detected (<45%), else 0
     """
 
     llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", temperature=0.2)
@@ -867,7 +838,7 @@ def ask_ai_about_data(user_question, chat_history):
     Latest Message: "{user_question}"
     
     Is the teacher asking to:
-    A) Query/fetch NEW data from the database (e.g., scores, counts, top missed CS terms, subtopic search)?
+    A) Query/fetch NEW data from the database (e.g., scores, counts, top missed Business terms, subtopic search)?
     B) Refine, reformat, expand, or follow up on previously generated text/questions (e.g., remove options, format answers, bold terms, rephrase response)?
     
     Respond with ONLY the single letter 'A' or 'B'.
@@ -890,7 +861,7 @@ def ask_ai_about_data(user_question, chat_history):
     # --- PATH B: Refinement / Content Follow-up (No SQL Executed) ---
     if "B" in intent and chat_history:
         refine_prompt = f"""
-        You are an expert A-Level Computer Science pedagogical assistant.
+        You are an expert A-Level Business pedagogical assistant.
         
         Full Conversation History:
         {full_transcript}
@@ -916,7 +887,7 @@ def ask_ai_about_data(user_question, chat_history):
 
     # --- PATH A: New Data Retrieval (Text-to-SQL for PostgreSQL) ---
     sql_prompt = f"""
-    You are an expert PostgreSQL data analyst for an A-Level Computer Science department.
+    You are an expert PostgreSQL data analyst for an A-Level Business department.
     Given the PostgreSQL table schema below and previous context, write a SINGLE valid, read-only SELECT query to answer the teacher's latest question.
     Use PostgreSQL syntax. Do NOT include markdown fences (like ```sql), code blocks, or commentary—output ONLY the plain SQL query text.
 
@@ -958,7 +929,7 @@ def ask_ai_about_data(user_question, chat_history):
         )
 
     synthesis_prompt = f"""
-    You are a Head of Computer Science evaluating learning analytics and generating targeted A-Level revision resources.
+    You are a Head of Business & Economics evaluating learning analytics and generating targeted A-Level revision resources.
     Synthesize the query results into a concise, professional response that directly fulfills the teacher's request.
     
     CRITICAL FORMATTING INSTRUCTION:
@@ -993,7 +964,7 @@ for idx, entry in enumerate(st.session_state.ai_chat_history):
 
 # --- Chat Input for Questions & Follow-ups ---
 teacher_query = st.chat_input(
-    "Ask an initial or follow-up question about A-Level cohort telemetry..."
+    "Ask an initial or follow-up question about A-Level Business cohort telemetry..."
 )
 
 if teacher_query:

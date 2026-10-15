@@ -30,7 +30,7 @@ else:
 COURSE_TITLE = COURSE_SPEC.get("course_title", "Edexcel A-Level Business")
 SUBJECT = COURSE_SPEC.get("subject", "Business")
 LEVEL = COURSE_SPEC.get("level", "A-Level")
-TARGET_TURNS = COURSE_SPEC.get("target_turns", 7)
+TARGET_TURNS = COURSE_SPEC.get("target_turns", 5)
 
 
 class ChatState(TypedDict, total=False):
@@ -38,6 +38,7 @@ class ChatState(TypedDict, total=False):
     sub_topic: str
     turn_count: int
     is_final_turn: bool
+    is_freestyle: bool
 
 
 def get_context(sub_topic: str, user_query: str) -> str:
@@ -72,7 +73,111 @@ def extract_clean_text(response) -> str:
     return str(response)
 
 
-# --- Live Streaming Generator for Streamlit UI ---
+# --- FREESTYLE PRACTICE HELPERS ---
+
+def verify_topic_alignment(custom_prompt: str, course_title: str = COURSE_TITLE) -> dict:
+    """Verifies whether a freestyle prompt aligns with Edexcel A-Level Business scope."""
+    system_prompt = f"""You are a Lead Examiner for {course_title} ({LEVEL}).
+Determine if the following student-provided topic, business strategy, or case study falls within the domain of A-Level Business Studies (e.g., marketing, financial planning, liquidity, cash flow, operational efficiency, leadership styles, corporate strategy, Ansoff/Porter models, organizational structure, global business, or external influences).
+
+Return ONLY a JSON object:
+{{
+  "is_aligned": true,
+  "reasoning": "Short 1-sentence explanation of why it aligns or why it falls outside Business Studies.",
+  "suggested_pivot": "If not aligned, suggest a relevant Business Studies topic that bridges the student's request."
+}}"""
+
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0.1)
+    response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=custom_prompt)])
+    raw_text = extract_clean_text(response)
+    clean_text = re.sub(r"```json|```", "", raw_text).strip()
+    return json.loads(clean_text)
+
+
+def stream_freestyle_socratic_response(messages: list, custom_prompt: str, focus_mode: str):
+    """Streams freestyle Socratic responses directly from Gemini tailored for Edexcel Business."""
+    
+    if "Terminology" in focus_mode or "Vocabulary" in focus_mode:
+        focus_guidance = (
+            "FOCUS AREA: Key Business Terminology & Disciplinary Literacy.\n"
+            "Prompt the student to define, apply, and integrate precise Business key terms "
+            "(e.g., liquidity, contribution, elasticity, operating margin, working capital, Ansoff's matrix). "
+            "Challenge informal or vague business descriptions."
+        )
+    else:
+        focus_guidance = (
+            "FOCUS AREA: Business Explanations & Causal Chains.\n"
+            "Guide the student to construct step-by-step business chains of reasoning (e.g., Strategic Decision -> Operational/Financial Impact -> Overall Business Performance -> Stakeholder Evaluation). "
+            "Ask probing questions that force them to connect cause to business effect."
+        )
+
+    system_prompt = f"""You are an expert Socratic {COURSE_TITLE} ({LEVEL}) Tutor.
+The student is exploring a custom freestyle topic/scenario:
+'{custom_prompt}'
+
+{focus_guidance}
+
+TUTORING MANDATE:
+- Guide the student step-by-step using probing questions and constructive hints.
+- Do NOT give away full analytical answers directly. Encourage the student to think through the business mechanisms.
+- Keep responses concise (1-2 short paragraphs) and end with a single, clear probing question."""
+
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, streaming=True)
+    messages_to_send = [SystemMessage(content=system_prompt)] + list(messages)
+
+    for chunk in llm.stream(messages_to_send):
+        if chunk.content:
+            yield chunk.content
+
+
+def generate_freestyle_synthesis_prompt(
+    custom_prompt: str,
+    chat_history: list,
+    focus_mode: str,
+    course_title: str = COURSE_TITLE,
+    level: str = LEVEL,
+) -> dict:
+    """Generates a 6-mark synthesis prompt dynamically bounded by the freestyle chat transcript."""
+    transcript_lines = []
+    for msg in chat_history:
+        role = "Student" if (msg.get("role") == "student" or isinstance(msg, HumanMessage)) else "Tutor"
+        content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")
+        transcript_lines.append(f"{role}: {content}")
+    full_transcript = "\n".join(transcript_lines)
+
+    prompt = f"""You are an expert {course_title} ({level}) Lead Examiner.
+Freestyle Topic Explored: '{custom_prompt}'
+Focus Mode: {focus_mode}
+
+Below is the transcript of a Socratic dialogue between a student and tutor:
+---
+TRANSCRIPT:
+{full_transcript}
+---
+
+Task: Create a 6-mark synthesis prompt bounded STRICTLY by the specific business concepts, terms, or causal chains discussed in the transcript above.
+
+Return ONLY a JSON object:
+{{
+    "question": "Construct a coherent 6-mark explanation summarizing the key business principles, terminology, and causal relationships explored during today's discussion on '{custom_prompt}'.",
+    "mark_scheme": [
+        "Mark 1: [Specific concept/term 1 covered in transcript]",
+        "Mark 2: [Specific concept/term 2 covered in transcript]",
+        "Mark 3: [Specific concept/term 3 covered in transcript]",
+        "Mark 4: [Specific concept/term 4 covered in transcript]",
+        "Mark 5: [Specific concept/term 5 covered in transcript]",
+        "Mark 6: [Coherent synthesis connecting these concepts]"
+    ]
+}}"""
+
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0.2)
+    response = llm.invoke([HumanMessage(content=prompt)])
+    raw_text = extract_clean_text(response)
+    clean_text = re.sub(r"```json|```", "", raw_text).strip()
+    return json.loads(clean_text)
+
+
+# --- Live Streaming Generator for Standard Target Sessions ---
 def stream_socratic_response(messages: list, sub_topic: str):
     """Streams response tokens directly from Gemini for real-time UI rendering."""
     user_query = messages[-1].content if messages else ""
@@ -92,12 +197,10 @@ CRITICAL TOPIC BOUNDARY RULE:
 
 TUTORING MANDATE:
 - Guide the student step-by-step using probing questions and constructive hints. 
-- Focus on developing their disciplinary literacy in {SUBJECT}: encourage precise subject-specific terminology, explicit causal chains, structural mechanisms, accurate contextual details, and evidence-backed explanations. 
+- Focus on developing their disciplinary literacy in {SUBJECT}: encourage precise subject-specific terminology, explicit causal chains, financial models, market contexts, and evidence-backed explanations. 
 - Never give away full answers directly."""
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash", google_api_key=API_KEY, streaming=True
-    )
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, streaming=True)
     messages_to_send = [SystemMessage(content=system_prompt)] + list(messages)
 
     for chunk in llm.stream(messages_to_send):
@@ -125,7 +228,7 @@ CRITICAL TOPIC BOUNDARY RULE:
 
 TUTORING MANDATE:
 - Guide the student step-by-step using probing questions and constructive hints. 
-- Focus on developing their disciplinary literacy in {SUBJECT}: encourage precise subject-specific terminology, explicit causal chains, structural mechanisms, accurate contextual details, and evidence-backed explanations. 
+- Focus on developing their disciplinary literacy in {SUBJECT}: encourage precise subject-specific terminology, explicit causal chains, financial models, market contexts, and evidence-backed explanations. 
 - Never give away full answers directly."""
 
     llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY)
@@ -147,15 +250,15 @@ Syllabus Context:
 
 CRITICAL MANDATE: This is turn {TARGET_TURNS} (FINAL TURN). You MUST NOT ask any follow-up questions. Conclude the dialogue phase and provide qualitative feedback.
 
-STRICT FORMATTING & LATEX RULES:
-- NEVER use LaTeX math delimiters like $, $$, \\(, or \\) unless required for complex mathematical expressions. Write standard prose, variables, and ratios in plain text or Markdown bold/code.
+STRICT FORMATTING RULES:
+- Write standard prose, variables, and ratios in plain text or Markdown bold. Avoid LaTeX delimiters.
 
 INSTRUCTIONS FOR SESSION ENDING:
 1. **Validate Final Answer:** Directly validate the student's final input in detail first.
 2. **Qualitative Performance Assessment:** 
-   - Highlight {SUBJECT} technical terms and specification concepts used effectively during the chat.
+   - Highlight {SUBJECT} technical terms, financial models, and specification concepts used effectively during the chat.
    - List key specification terms that were missed or need review.
-   - Provide 1–2 targeted feedback points.
+   - Provide 1–2 targeted feedback points on business analysis or evaluation depth.
    - Reiterate that they will now move on to their 6-mark independent synthesis question.
 
 FORMAT YOUR OUTPUT EXACTLY AS FOLLOWS:
@@ -228,27 +331,18 @@ builder.add_edge("didactic_fallback", END)
 workflow = builder.compile()
 
 
-# --- Socratic 6-Mark Synthesis & Disciplinary Literacy Helpers ---
+# --- Standard Socratic 6-Mark Synthesis Helpers ---
 def generate_socratic_synthesis_prompt(
     sub_topic: str,
     chat_history: list,
     course_title: str = COURSE_TITLE,
     level: str = LEVEL,
 ) -> dict:
-    """Generates an accessible 6-mark synthesis prompt dynamically bounded by the chat history."""
-
+    """Generates a 6-mark synthesis prompt dynamically bounded by the chat transcript."""
     transcript_lines = []
     for msg in chat_history:
-        role = (
-            "Student"
-            if msg.get("role") == "student" or isinstance(msg, HumanMessage)
-            else "Tutor"
-        )
-        content = (
-            msg.get("content")
-            if isinstance(msg, dict)
-            else getattr(msg, "content", "")
-        )
+        role = "Student" if (msg.get("role") == "student" or isinstance(msg, HumanMessage)) else "Tutor"
+        content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")
         transcript_lines.append(f"{role}: {content}")
     full_transcript = "\n".join(transcript_lines)
 
@@ -262,15 +356,12 @@ TRANSCRIPT:
 ---
 
 CRITICAL MANDATE:
-Create a 6-mark synthesis exercise bounded STRICTLY by the specific concepts, terms, or mechanisms discussed in the transcript above.
+Create a 6-mark synthesis exercise bounded STRICTLY by the specific business concepts, terms, or mechanisms discussed in the transcript above.
 Do NOT include specification terms or concepts UNLESS they were explicitly mentioned in the chat transcript.
-
-Task:
-Instruct the student to write a structured summary connecting the key technical terms and concepts explored during their discussion.
 
 Return ONLY a JSON object:
 {{
-    "question": "Construct a coherent 6-mark explanation summarizing the specific mechanisms and technical terms explored in today's discussion on '{sub_topic}'.",
+    "question": "Construct a coherent 6-mark explanation summarizing the specific business concepts, terminology, and mechanisms explored in today's discussion on '{sub_topic}'.",
     "mark_scheme": [
         "Mark 1: [Specific concept/term 1 covered in transcript]",
         "Mark 2: [Specific concept/term 2 covered in transcript]",
@@ -281,11 +372,8 @@ Return ONLY a JSON object:
     ]
 }}"""
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0.2
-    )
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0.2)
     response = llm.invoke([HumanMessage(content=prompt)])
-
     raw_text = extract_clean_text(response)
     clean_text = re.sub(r"```json|```", "", raw_text).strip()
     return json.loads(clean_text)
@@ -300,9 +388,7 @@ def evaluate_socratic_synthesis(
     level: str = LEVEL,
 ) -> dict:
     """Evaluates student's synthesis response against the dynamically bounded 6-mark rubric."""
-    ms_text = "\n".join(
-        [f"- Mark {i+1}: {pt}" for i, pt in enumerate(mark_scheme)]
-    )
+    ms_text = "\n".join([f"- Mark {i+1}: {pt}" for i, pt in enumerate(mark_scheme)])
 
     prompt = f"""You are a {course_title} ({level}) examiner evaluating a 6-mark student topic synthesis.
 Task Prompt: {question}
@@ -314,11 +400,11 @@ Student Response:
 {student_answer}
 
 EVALUATION RULES:
-1. DISCIPLINARY LITERACY FIRST: Focus primarily on the correct use, connection, and application of subject-specific terminology and concepts.
-2. CREDITING CONCEPTUAL FLUENCY: Credit marks generously wherever the student demonstrates accurate conceptual understanding through precise vocabulary. Do NOT withhold marks solely because minor structural or administrative phrasing is implied rather than stated verbatim.
-3. FLEXIBLE RUBRIC MAPPING: Map the student's descriptions directly to the rubric points. If an explanation demonstrates the underlying mechanism using proper domain terms, award the corresponding mark point.
+1. DISCIPLINARY LITERACY FIRST: Focus on the correct use, connection, and application of business terminology and causal links.
+2. CREDITING CONCEPTUAL FLUENCY: Credit marks generously wherever the student demonstrates accurate business understanding through precise vocabulary.
+3. FLEXIBLE RUBRIC MAPPING: Map the student's descriptions directly to the rubric points.
 4. SCOPE BOUNDARY: Do NOT penalize or criticize the student for omitting topics outside the scope of this rubric.
-5. SCORE & FEEDBACK: The total score MUST be an integer from 0 to 6. Keep examiner feedback constructive and encouraging—praise the technical terms used effectively and gently suggest 1–2 specific terms that would elevate their disciplinary fluency further.
+5. SCORE & FEEDBACK: The total score MUST be an integer from 0 to 6. Keep examiner feedback constructive—praise effective terminology and suggest 1–2 specific terms to elevate fluency further.
 
 Return ONLY a JSON object:
 {{
@@ -328,14 +414,11 @@ Return ONLY a JSON object:
     "missed_points": ["Mark point missed..."],
     "keywords_used": ["Term 1"],
     "keywords_missed": ["Term 2"],
-    "feedback": "Encouraging examiner advice focusing on terminology and conceptual flow..."
+    "feedback": "Encouraging examiner advice focusing on terminology and analytical flow..."
 }}"""
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0
-    )
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0)
     response = llm.invoke([HumanMessage(content=prompt)])
-
     raw_text = extract_clean_text(response)
     clean_text = re.sub(r"```json|```", "", raw_text).strip()
     return json.loads(clean_text)
@@ -351,15 +434,12 @@ Topic Focus: {sub_topic}
 Syllabus Context:
 {context}
 
-Generate exactly 10 short-answer exam questions testing precise definitions, key terms, causes, mechanisms, or specification details.
+Generate exactly 10 short-answer exam questions testing precise business definitions, key terms, causes, models, or specification details.
 Output ONLY a valid JSON array of 10 question strings, with no additional text or formatting:
 ["Question 1 text...", "Question 2 text...", ...]"""
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0.3
-    )
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0.3)
     response = llm.invoke([HumanMessage(content=prompt)])
-
     raw_text = extract_clean_text(response)
     clean_text = re.sub(r"```json|```", "", raw_text).strip()
     return json.loads(clean_text)
@@ -385,7 +465,7 @@ Syllabus Context:
 
 STRICT MARKING RUBRIC:
 - Base accuracy strictly on exact specification keywords derived from Syllabus Context.
-- Award 1 mark per question ONLY if exact domain terms or precise concepts are present. Layperson terms get 0 marks.
+- Award 1 mark per question ONLY if exact domain terms or precise business concepts are present. Layperson terms get 0 marks.
 - Provide concise, actionable feedback focusing on missing exam terminology.
 
 Return your assessment strictly as a single JSON object with no extra commentary:
@@ -408,11 +488,8 @@ Return your assessment strictly as a single JSON object with no extra commentary
 Student Submission:
 {qa_pairs}"""
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0
-    )
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0)
     response = llm.invoke([HumanMessage(content=prompt)])
-
     raw_text = extract_clean_text(response)
     clean_text = re.sub(r"```json|```", "", raw_text).strip()
     return json.loads(clean_text)
@@ -433,12 +510,10 @@ def generate_extended_question(
     sub_topic: str, course_title: str = COURSE_TITLE, level: str = LEVEL
 ) -> str:
     prompt = f"""You are an expert {level} lead examiner for {course_title}.
-Create ONE high-tier extended evaluation question for the subtopic: '{sub_topic}'.
-Use standard specification command words like 'Explain', 'Discuss', 'Evaluate', or 'Analyze'.
+Create ONE high-tier extended evaluation question (e.g. 9 to 20 marks context) for the subtopic: '{sub_topic}'.
+Use standard specification command words like 'Assess', 'Evaluate', or 'Analyze'.
 Return ONLY the raw question text."""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0.3
-    )
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0.3)
     response = llm.invoke([HumanMessage(content=prompt)])
     raw_text = extract_clean_text(response)
     return raw_text.strip()
@@ -451,12 +526,12 @@ def grade_extended_response(
     course_title: str = COURSE_TITLE,
     level: str = LEVEL,
 ) -> Dict[str, Any]:
-    prompt = f"""You are a senior {level} examiner evaluating an extended response for {course_title}.
+    prompt = f"""You are a senior {level} examiner evaluating an extended analytical response for {course_title}.
 Topic: {sub_topic}
 Question: {question}
 Student Response: {student_answer}
 
-Evaluate based on disciplinary literacy: structural logic, precise specification terminology, causal links, and balanced evaluation.
+Evaluate based on disciplinary literacy: logical chain of reasoning, precise specification terminology, contextual application, and balanced evaluation.
 
 Return a JSON object:
 {{
@@ -465,13 +540,11 @@ Return a JSON object:
   "disciplinary_level": "Competent",
   "keywords_used": ["term 1", "term 2"],
   "keywords_missed": ["term 3"],
-  "strengths": "Summary of strengths...",
-  "struggle_advice": "Advice for improvement...",
+  "strengths": "Summary of analytical strengths...",
+  "struggle_advice": "Advice for improving evaluation or context...",
   "model_answer": "Exemplar top-band response..."
 }}"""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0
-    )
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0)
     response = llm.invoke([HumanMessage(content=prompt)])
     clean_text = extract_clean_text(response)
     clean_text = re.sub(r"```json|```", "", clean_text).strip()
@@ -483,16 +556,14 @@ def generate_layman_transformation_prompt(
 ) -> Dict[str, str]:
     prompt = f"""Create an exercise for {level} {course_title} on '{sub_topic}'.
 1. Write a typical 4-mark exam question.
-2. Write a poorly phrased, informal student response using vague everyday language without precise technical terms or specification concepts.
+2. Write a poorly phrased, informal student response using vague everyday business language without precise technical terms or specification concepts.
 
 Return ONLY JSON:
 {{
   "question": "Exam question...",
   "layman_answer": "Informal student draft..."
 }}"""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0.4
-    )
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0.4)
     response = llm.invoke([HumanMessage(content=prompt)])
     clean_text = extract_clean_text(response)
     clean_text = re.sub(r"```json|```", "", clean_text).strip()
@@ -513,7 +584,7 @@ Question: {question}
 Original Informal Draft: {layman_answer}
 Student Upgraded Rewrite: {student_rewrite}
 
-Assess whether the student replaced informal language with precise specification terminology, accurate details, or structural mechanisms.
+Assess whether the student replaced informal language with precise specification terminology, business models, or clear causal chains.
 
 Return JSON:
 {{
@@ -523,9 +594,7 @@ Return JSON:
   "missed_terms": ["term 2"],
   "feedback": "Constructive examiner note..."
 }}"""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0
-    )
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", google_api_key=API_KEY, temperature=0)
     response = llm.invoke([HumanMessage(content=prompt)])
     clean_text = extract_clean_text(response)
     clean_text = re.sub(r"```json|```", "", clean_text).strip()
